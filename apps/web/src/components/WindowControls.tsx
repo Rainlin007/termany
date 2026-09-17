@@ -1,4 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { IS_MAC } from "../keybindings";
+import { toggleWindowFullscreen } from "../windowFullscreen";
 
 // Glyphs shown on hover, matching the macOS traffic lights (✕ / − / fill arrows).
 const glyphs = {
@@ -29,7 +31,7 @@ const glyphs = {
  * (decorations: false) to avoid the native frame's top hairline. Rendered only
  * inside the Tauri shell.
  */
-export function WindowControls() {
+export function WindowControls({ fullscreen }: { fullscreen: boolean }) {
   const win = getCurrentWindow();
   return (
     <div className="win-controls">
@@ -41,8 +43,13 @@ export function WindowControls() {
       </button>
       <button
         className="win-dot zoom"
-        aria-label="Zoom"
-        onClick={() => void win.toggleMaximize()}
+        aria-label={fullscreen ? "Exit Full Screen" : IS_MAC ? "Enter Full Screen" : "Zoom"}
+        title={IS_MAC ? `${fullscreen ? "Exit" : "Enter"} Full Screen (⌃⌘F) · Option-click to zoom` : "Zoom"}
+        onClick={(event) => {
+          // macOS green button convention: fullscreen; Option-click zooms.
+          if (fullscreen || (IS_MAC && !event.altKey)) void toggleWindowFullscreen(win);
+          else void win.toggleMaximize();
+        }}
       >
         {glyphs.zoom}
       </button>

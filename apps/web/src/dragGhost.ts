@@ -31,6 +31,7 @@ const dropSelection = () => {
 export function beginDragCursor() {
   document.body.style.cursor = "grabbing";
   document.body.style.userSelect = "none";
+  document.body.style.setProperty("-webkit-user-select", "none");
   dropSelection();
   document.addEventListener("selectstart", stopSelectStart);
   document.addEventListener("selectionchange", dropSelection);
@@ -40,6 +41,7 @@ export function beginDragCursor() {
 export function endDragCursor() {
   document.body.style.cursor = "";
   document.body.style.userSelect = "";
+  document.body.style.removeProperty("-webkit-user-select");
   document.removeEventListener("selectstart", stopSelectStart);
   document.removeEventListener("selectionchange", dropSelection);
 }

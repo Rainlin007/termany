@@ -15,6 +15,7 @@ import { TreeSidebar } from "./components/TreeSidebar";
 import { WindowControls } from "./components/WindowControls";
 import { WorkspaceSwitcher } from "./components/WorkspaceSwitcher";
 import { isTauri } from "./env";
+import { useWindowFullscreen } from "./windowFullscreen";
 import { ACTIONS, matchChord } from "./keybindings";
 import { activeHtab, activeNode, focusedCwdSession, leafIds, useStore } from "./state/store";
 import { openNewWindow } from "./state/windows";
@@ -98,6 +99,7 @@ function isTextEditingTarget(target: EventTarget | null): boolean {
 }
 
 export function App() {
+  const fullscreen = useWindowFullscreen();
   const htab = useStore(activeHtab);
   const activeWorkspaceId = useStore((state) => state.activeWorkspace);
   const botEnabled = useStore((state) => state.botEnabled);
@@ -428,9 +430,9 @@ export function App() {
   }, []);
 
   return (
-    <div className={`app${isTauri ? " tauri" : ""}${botEnabled ? "" : " bot-disabled"}`}>
-      {isTauri && <WindowControls />}
-      {isTauri && <ResizeHandles />}
+    <div className={`app${isTauri ? " tauri" : ""}${fullscreen ? " fullscreen" : ""}${botEnabled ? "" : " bot-disabled"}`}>
+      {isTauri && <WindowControls fullscreen={fullscreen} />}
+      {isTauri && !fullscreen && <ResizeHandles />}
       {botEnabled && <AppTabRail active={appTab} workspaceId={activeWorkspaceId} onChange={handleAppTabChange} />}
       <WorkspaceSwitcher onOpenSettings={openSettings} />
       {appTab === "pages" && (

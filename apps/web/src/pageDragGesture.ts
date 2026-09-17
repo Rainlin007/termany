@@ -1,4 +1,4 @@
-/** A page drag must belong to one uninterrupted primary-button press. */
+/** A UI drag must belong to one uninterrupted primary-button press. */
 export class PageDragGesture<T> {
   private press: { pointerId: number; x: number; y: number; data: T; active: boolean } | null = null;
   private suppressClick = false;

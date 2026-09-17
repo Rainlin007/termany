@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isReorderedMacTap } from "../macTapCompatibility";
 
 // A borderless window has no native resize borders, so we lay thin invisible
 // handles along every edge/corner that drive Tauri's startResizeDragging.
@@ -32,6 +33,7 @@ export function ResizeHandles() {
           className={`resize-handle ${h.cls}`}
           onMouseDown={(e) => {
             e.preventDefault();
+            if (e.button !== 0 || isReorderedMacTap(e.nativeEvent)) return;
             void getCurrentWindow().startResizeDragging(h.dir);
           }}
         />

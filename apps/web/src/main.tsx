@@ -10,6 +10,13 @@ import "./styles.css";
 import { loadSnapshots, startScrollSync } from "./terminal/scroll";
 import { applyTheme, loadAiThemes, loadThemeId, storedThemeId, THEMES } from "./themes";
 import { hydrateCodexTheme, isCodexPackTheme } from "./themes/codex-packs";
+import { installMacTapCompatibility } from "./macTapCompatibility";
+
+// WKWebView + some macOS IMEs deliver tap releases before their presses.
+if (isTauri && navigator.userAgent.includes("Mac")) {
+  const disposeTapCompatibility = installMacTapCompatibility(window);
+  if (import.meta.hot) import.meta.hot.dispose(disposeTapCompatibility);
+}
 
 // In the desktop shell the window is borderless + transparent so we can draw our
 // own rounded corners and traffic lights. Tag <html> so the CSS only kicks in there.

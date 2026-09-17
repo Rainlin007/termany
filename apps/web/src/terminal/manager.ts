@@ -34,6 +34,7 @@ import { forgetSessionUrls, noteSessionOutput } from "./servedUrls";
 import { registerWebLinks } from "./webLinks";
 import { fixWebkitGtkImeComposition } from "./webkitGtkIme";
 import { createGlyphAtlasRepairer, onAtlasPagesMerged } from "./glyphAtlas";
+import { TerminalSelectionGuard } from "./selectionGuard";
 
 /**
  * The terminal session registry.
@@ -56,6 +57,7 @@ export interface Session {
   search: SearchAddon;
   backend: ITerminalBackend;
   opened: boolean;
+  selectionGuard?: TerminalSelectionGuard;
   followOutput: boolean;
   /** Absolute buffer row held in view after the user scrolls away from live output. */
   lockedViewportY: number | null;
@@ -1580,49 +1582,6 @@ function getSession(id: string, cwdFrom?: string[], sshTarget?: string, paneId =
     writeTerminalInput(id, session, data);
   });
 
-  // Select-to-copy only after an actual selection gesture. The old listener
-  // copied on EVERY mouseup while any selection existed, so a plain click,
-  // right-click, or clicking an old selection silently overwrote the system
-  // clipboard. A small movement threshold also filters trackpad/mouse jitter.
-  const SELECTION_DRAG_PX = 4;
-  let selectionGesture: {
-    x: number;
-    y: number;
-    dragged: boolean;
-    clickCount: number;
-  } | null = null;
-  el.addEventListener("mousedown", (event) => {
-    if (event.button !== 0) {
-      selectionGesture = null;
-      return;
-    }
-    selectionGesture = {
-      x: event.clientX,
-      y: event.clientY,
-      dragged: false,
-      clickCount: event.detail,
-    };
-  });
-  el.addEventListener("mousemove", (event) => {
-    if (!selectionGesture || !(event.buttons & 1)) return;
-    const dx = event.clientX - selectionGesture.x;
-    const dy = event.clientY - selectionGesture.y;
-    if (dx * dx + dy * dy >= SELECTION_DRAG_PX * SELECTION_DRAG_PX) {
-      selectionGesture.dragged = true;
-    }
-  });
-  el.addEventListener("mouseup", (event) => {
-    const gesture = selectionGesture;
-    selectionGesture = null;
-    if (event.button !== 0 || !gesture) return;
-    // Double/triple click deliberately selects a word/line without dragging.
-    if (!gesture.dragged && gesture.clickCount < 2) return;
-    const sel = term.getSelection();
-    // Use trim only as an emptiness check. Copy the original selection so
-    // meaningful indentation and line breaks are preserved.
-    if (sel.trim()) void writeClipboard(sel);
-  });
-
   // Paste image blobs as local file paths only when the active program looks
   // like an agent/TUI that knows how to turn image paths into image chips.
   // In a plain shell, inserting the temp path directly is surprising and easy
@@ -1829,6 +1788,8 @@ export function attachSession(
   host.appendChild(s.el);
   if (!s.opened) {
     s.term.open(s.el); // el is now in the document — renderer initialises correctly
+    s.selectionGuard = new TerminalSelectionGuard((text) => { void writeClipboard(text); });
+    s.term.loadAddon(s.selectionGuard);
     if (s.term.textarea) applyTextInputProps(s.term.textarea);
     // GPU renderer: the default DOM renderer repaints character-by-character and
     // makes echo feel laggy. WebGL must be loaded AFTER open(). If the GPU context
@@ -1896,7 +1857,10 @@ export function scrollSessionToBottom(id: string) {
 /** Detach from the DOM but keep the session (and its shell) alive. */
 export function detachSession(id: string, host: HTMLElement) {
   const s = sessions.get(id);
-  if (s && s.el.parentNode === host) host.removeChild(s.el);
+  if (s && s.el.parentNode === host) {
+    s.selectionGuard?.cancel();
+    host.removeChild(s.el);
+  }
 }
 
 /** Refit to the current container size and tell the PTY the new dimensions. */
@@ -1950,6 +1914,7 @@ function refreshSessionAfterLayout(id: string, expected: Session) {
 }
 
 function blurRuntimeSession(id: string, session: Session) {
+  session.selectionGuard?.cancel();
   const hadDomFocus = session.term.element?.classList.contains("focus") ?? false;
   const cursorChanged = setSessionCursorFocused(session, false);
   session.term.blur();

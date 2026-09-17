@@ -1,7 +1,8 @@
 import { textInputProps } from "../textInputProps";
 import { Fragment, useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { beginDragCursor, createDragGhost, endDragCursor } from "../dragGhost";
+import { beginDragCursor, createDragGhost, endDragCursor, type DragGhost } from "../dragGhost";
+import { usePointerDrag } from "../usePointerDrag";
 import { useI18n } from "../i18n";
 import { useImeGuard } from "../imeGuard";
 import { registerOccluder, unregisterOccluder } from "../nativeViewOcclusion";
@@ -718,6 +719,7 @@ export function SplitView({ htab }: { htab: HTab }) {
   const newHTabDropRef = useRef(false);
   // Dropped on a sidebar page row → new tab on that page.
   const nodeDropTargetRef = useRef<string | null>(null);
+  const trackDrag = usePointerDrag(htab.id);
   const focusedLeaf = htab.focused ? findLeaf(htab.layout, htab.focused) : undefined;
   const focusedTerminalId =
     focusedLeaf && (focusedLeaf.view ?? "terminal") === "terminal" ? focusedLeaf.id : undefined;
@@ -738,14 +740,11 @@ export function SplitView({ htab }: { htab: HTab }) {
   };
 
   const startPaneDrag = (dragId: string, e: React.PointerEvent) => {
-    if (e.button !== 0 || (e.target as HTMLElement).closest("button,input")) return;
-    e.preventDefault();
+    if (e.button !== 0 || !e.isPrimary || (e.target as HTMLElement).closest("button,input")) return;
 
     const dragged = findLeaf(htab.layout, dragId);
-    const ghost = createDragGhost(dragged?.title ?? "pane");
-    ghost.move(e.clientX, e.clientY);
+    let ghost: DragGhost | null = null;
     const source = document.querySelector<HTMLElement>(`[data-pane-id="${CSS.escape(dragId)}"]`);
-    source?.classList.add("dragging");
 
     const clearTabHover = () => {
       document
@@ -761,7 +760,7 @@ export function SplitView({ htab }: { htab: HTab }) {
 
     const onMove = (ev: PointerEvent) => {
       clearTabHover();
-      ghost.move(ev.clientX, ev.clientY);
+      ghost?.move(ev.clientX, ev.clientY);
       const under = document.elementFromPoint(ev.clientX, ev.clientY);
       const tab = under?.closest<HTMLElement>("[data-htab-id]");
       const targetHTabId = tab?.dataset.htabId ?? null;
@@ -770,7 +769,7 @@ export function SplitView({ htab }: { htab: HTab }) {
         newHTabDropRef.current = false;
         nodeDropTargetRef.current = null;
         tab.classList.add("pane-drop-target");
-        ghost.setHint(t("drag.toTab"));
+        ghost?.setHint(t("drag.toTab"));
         updateDropTarget(null);
         return;
       }
@@ -783,7 +782,7 @@ export function SplitView({ htab }: { htab: HTab }) {
         nodeDropTargetRef.current = rowNodeId;
         newHTabDropRef.current = false;
         row.classList.add("tab-drop-target");
-        ghost.setHint(t("drag.toPage"));
+        ghost?.setHint(t("drag.toPage"));
         updateDropTarget(null);
         return;
       }
@@ -795,7 +794,7 @@ export function SplitView({ htab }: { htab: HTab }) {
       if (bar && !tab) {
         newHTabDropRef.current = true;
         bar.classList.add("pane-drop-new");
-        ghost.setHint(t("drag.newTab"));
+        ghost?.setHint(t("drag.newTab"));
         updateDropTarget(null);
         return;
       }
@@ -804,16 +803,16 @@ export function SplitView({ htab }: { htab: HTab }) {
       const el = under?.closest<HTMLElement>("[data-pane-id]");
       const targetId = el?.dataset.paneId;
       if (!el || !targetId || targetId === dragId) {
-        ghost.setHint(null);
+        ghost?.setHint(null);
         updateDropTarget(null);
         return;
       }
       const edge = edgeFor(el.getBoundingClientRect(), ev.clientX, ev.clientY);
-      ghost.setHint(t(`drag.edge.${edge}`));
+      ghost?.setHint(t(`drag.edge.${edge}`));
       updateDropTarget({ id: targetId, edge });
     };
 
-    const onUp = () => {
+    const onEnd = (committed: boolean) => {
       const target = dropTargetRef.current;
       const targetHTabId = htabDropTargetRef.current;
       const toNewHTab = newHTabDropRef.current;
@@ -823,12 +822,10 @@ export function SplitView({ htab }: { htab: HTab }) {
       nodeDropTargetRef.current = null;
       updateDropTarget(null);
       clearTabHover();
-      ghost.destroy();
+      ghost?.destroy();
       source?.classList.remove("dragging");
-      endDragCursor();
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
+      if (ghost) endDragCursor();
+      if (!committed) return;
       if (targetHTabId) {
         movePaneToHTab(dragId, targetHTabId);
         return;
@@ -844,10 +841,15 @@ export function SplitView({ htab }: { htab: HTab }) {
       if (target) movePane(dragId, target.id, target.edge);
     };
 
-    beginDragCursor();
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
+    trackDrag(e, {
+      start: () => {
+        ghost = createDragGhost(dragged?.title ?? "pane");
+        source?.classList.add("dragging");
+        beginDragCursor();
+      },
+      move: onMove,
+      end: onEnd,
+    });
   };
 
   const maxLeaf = htab.maximized ? findLeaf(htab.layout, htab.maximized) : undefined;

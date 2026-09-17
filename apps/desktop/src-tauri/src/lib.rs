@@ -1213,10 +1213,17 @@ pub fn run() {
                     .id("new_window")
                     .build(app)?;
                 let minimize = MenuItemBuilder::new("Minimize").id("minimize").build(app)?;
+                // Use Tauri's API instead of the predefined toggleFullScreen:
+                // action: it prepares/restores the style of borderless windows.
+                let fullscreen = MenuItemBuilder::new("Toggle Full Screen")
+                    .id("toggle_fullscreen")
+                    .accelerator("Control+Super+F")
+                    .build(app)?;
                 let window_menu = SubmenuBuilder::new(app, "Window")
                     .item(&new_window)
                     .separator()
                     .item(&minimize)
+                    .item(&fullscreen)
                     .build()?;
                 let menu = MenuBuilder::new(app)
                     .items(&[&app_menu, &edit_menu, &window_menu])
@@ -1232,6 +1239,16 @@ pub fn run() {
                     "minimize" => {
                         if let Some(window) = target_window(app_handle) {
                             let _ = window.minimize();
+                        }
+                    }
+                    "toggle_fullscreen" => {
+                        if let Some(window) = target_window(app_handle) {
+                            let result = window
+                                .is_fullscreen()
+                                .and_then(|fullscreen| window.set_fullscreen(!fullscreen));
+                            if let Err(error) = result {
+                                log::warn!("[termany] could not toggle fullscreen: {error}");
+                            }
                         }
                     }
                     _ => {}

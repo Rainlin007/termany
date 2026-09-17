@@ -2,6 +2,7 @@ import { toggleWorkspaceSwitcher } from "../workspaceSwitcherEvents";
 import { textInputProps } from "../textInputProps";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { beginDragCursor, createDragGhost, endDragCursor, type DragGhost } from "../dragGhost";
+import { usePointerDrag } from "../usePointerDrag";
 import { isTauri } from "../env";
 import { useI18n } from "../i18n";
 import { useImeGuard } from "../imeGuard";
@@ -53,6 +54,7 @@ export function HTabBar() {
   const suppressClickRef = useRef(false);
   const stripRef = useRef<HTMLDivElement>(null);
   const titleBar = useTitleBarGesture();
+  const trackDrag = usePointerDrag(node?.id ?? "");
 
   // Keep the active tab on screen — a tab created past the right edge would
   // otherwise be active but invisible. `nearest` no-ops when it already is.
@@ -94,14 +96,11 @@ export function HTabBar() {
   );
 
   const startTabDrag = (tabId: string, e: React.PointerEvent<HTMLDivElement>) => {
-    if (!node || e.button !== 0 || editing === tabId) return;
+    if (!node || e.button !== 0 || !e.isPrimary || editing === tabId) return;
     if ((e.target as HTMLElement).closest("button,input")) return;
+    suppressClickRef.current = false;
     const fromNodeId = node.id;
-    const pointerId = e.pointerId;
-    const startX = e.clientX;
-    const startY = e.clientY;
     const title = node.htabs.find((h) => h.id === tabId)?.title ?? "tab";
-    let active = false;
     let targetNodeId: string | null = null;
     // Dropped inside the tree but not on a page → the tab becomes its own page.
     let toNewNode = false;
@@ -120,15 +119,6 @@ export function HTabBar() {
     };
 
     const onMove = (ev: PointerEvent) => {
-      if (ev.pointerId !== pointerId) return;
-      if (!active) {
-        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
-        active = true;
-        ghost = createDragGhost(title);
-        self?.classList.add("dragging");
-        beginDragCursor();
-      }
-      ev.preventDefault();
       clearHover();
       ghost?.move(ev.clientX, ev.clientY);
       const under = document.elementFromPoint(ev.clientX, ev.clientY);
@@ -148,24 +138,26 @@ export function HTabBar() {
       ghost?.setHint(tree ? t("drag.newPage") : null);
     };
 
-    const onUp = (ev: PointerEvent) => {
-      if (ev.pointerId !== pointerId) return;
+    const onEnd = (committed: boolean) => {
       clearHover();
       ghost?.destroy();
       self?.classList.remove("dragging");
-      endDragCursor();
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-      if (!active) return;
+      if (ghost) endDragCursor();
+      if (!committed) return;
       suppressClickRef.current = true;
       if (targetNodeId && targetNodeId !== fromNodeId) moveHTab(tabId, fromNodeId, targetNodeId);
       else if (toNewNode) moveHTabToNewNode(tabId, fromNodeId);
     };
 
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
+    trackDrag(e, {
+      start: () => {
+        ghost = createDragGhost(title);
+        self?.classList.add("dragging");
+        beginDragCursor();
+      },
+      move: onMove,
+      end: onEnd,
+    });
   };
 
   // The bar doubles as the window's title bar: its empty parts drag the window

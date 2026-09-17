@@ -19,6 +19,7 @@ import termanyIcon from "../assets/agents/termany.png?url";
 import { compareConversationActivity, lastConversationTime } from "../agentConversationOrder";
 import { compareConversationOrganization, conversationMoveUpdates } from "../agentConversationOrganization";
 import { beginDragCursor, createDragGhost, endDragCursor, type DragGhost } from "../dragGhost";
+import { usePointerDrag } from "../usePointerDrag";
 import { latestAssistantPreview } from "../agentMessagePreview";
 import { a2aInboxStreamingId } from "../agentA2A";
 import { activeAgentConversationTopic, agentConversationTopics, agentConversationTopicSessionId, allAgentConversationMessages } from "../agentGroupTopics";
@@ -193,16 +194,7 @@ export function AgentWorkspace({ workspaceId, visible = true }: { workspaceId: s
   const [draggingConversationId, setDraggingConversationId] = useState("");
   const [dropMarker, setDropMarker] = useState<AgentDropMarker | null>(null);
   const agentInboxListRef = useRef<HTMLDivElement>(null);
-  const pointerDragRef = useRef<{
-    id: string;
-    title: string;
-    pointerId: number;
-    startX: number;
-    startY: number;
-    active: boolean;
-  } | null>(null);
-  const pointerDropRef = useRef<AgentPointerDrop | null>(null);
-  const dragGhostRef = useRef<DragGhost | null>(null);
+  const trackDrag = usePointerDrag(`${workspaceId}:${visible}`);
   const suppressConversationClickRef = useRef(false);
   const orderedConversationsRef = useRef<AgentConversation[]>([]);
   const onStreamingChange = useCallback((id: string, streaming: boolean) => {
@@ -908,40 +900,21 @@ export function AgentWorkspace({ workspaceId, visible = true }: { workspaceId: s
     event: ReactPointerEvent<HTMLElement>,
     conversation: AgentConversation
   ) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || !event.isPrimary) return;
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest("input,.agent-folder-actions")) return;
-    pointerDragRef.current = {
-      id: conversation.id,
-      title: displayTitle(conversation, t),
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      active: false,
-    };
-  };
+    suppressConversationClickRef.current = false;
+    const drag = { id: conversation.id, title: displayTitle(conversation, t) };
+    let ghost: DragGhost | null = null;
+    let drop: AgentPointerDrop | null = null;
 
-  useEffect(() => {
-    const setPointerDrop = (drop: AgentPointerDrop | null) => {
-      pointerDropRef.current = drop;
-      setDropMarker(drop?.marker ?? null);
+    const setPointerDrop = (next: AgentPointerDrop | null) => {
+      drop = next;
+      setDropMarker(next?.marker ?? null);
     };
 
     const onPointerMove = (event: PointerEvent) => {
-      const drag = pointerDragRef.current;
-      if (!drag || event.pointerId !== drag.pointerId) return;
-      if (!drag.active) {
-        const dx = event.clientX - drag.startX;
-        const dy = event.clientY - drag.startY;
-        if (Math.hypot(dx, dy) < 4) return;
-        drag.active = true;
-        setDraggingConversationId(drag.id);
-        dragGhostRef.current = createDragGhost(drag.title);
-        beginDragCursor();
-      }
-
-      event.preventDefault();
-      dragGhostRef.current?.move(event.clientX, event.clientY);
+      ghost?.move(event.clientX, event.clientY);
       const hit = document.elementFromPoint(event.clientX, event.clientY);
       const row = hit instanceof Element
         ? hit.closest<HTMLElement>("[data-agent-conversation-id]")
@@ -949,7 +922,7 @@ export function AgentWorkspace({ workspaceId, visible = true }: { workspaceId: s
       if (row && agentInboxListRef.current?.contains(row)) {
         const targetId = row.dataset.agentConversationId;
         if (!targetId || targetId === drag.id) {
-          dragGhostRef.current?.setHint(null);
+          ghost?.setHint(null);
           setPointerDrop(null);
           return;
         }
@@ -968,7 +941,7 @@ export function AgentWorkspace({ workspaceId, visible = true }: { workspaceId: s
           ? "before" : position > 0.75 ? "after" : "into";
         const beforeId = edge === "before" ? targetId : siblings[index + 1]?.id;
         const targetConversation = orderedConversationsRef.current.find((conversation) => conversation.id === targetId);
-        dragGhostRef.current?.setHint(edge === "before"
+        ghost?.setHint(edge === "before"
           ? t("drag.node.before")
           : edge === "after"
             ? t("drag.node.after")
@@ -992,7 +965,7 @@ export function AgentWorkspace({ workspaceId, visible = true }: { workspaceId: s
         const position = (event.clientY - rect.top) / rect.height;
         const edge: AgentDropMarker["edge"] = ungrouped || position < 0.25
           ? "before" : position > 0.75 ? "after" : "into";
-        dragGhostRef.current?.setHint(edge === "into"
+        ghost?.setHint(edge === "into"
           ? t("drag.node.into")
           : `${t("agentWorkspace.organizationNewGroup")} · ${t(edge === "before" ? "drag.node.before" : "drag.node.after")}`);
         setPointerDrop({
@@ -1012,31 +985,24 @@ export function AgentWorkspace({ workspaceId, visible = true }: { workspaceId: s
 
       const pinTarget = hit instanceof Element ? hit.closest<HTMLElement>("[data-agent-pin-drop]") : null;
       if (pinTarget && agentInboxListRef.current?.contains(pinTarget)) {
-        dragGhostRef.current?.setHint(t("agentWorkspace.organizationPin"));
+        ghost?.setHint(t("agentWorkspace.organizationPin"));
         setPointerDrop({ marker: { section: "pinned" }, target: { pinned: true } });
         return;
       }
 
       const overInbox = !!(hit && agentInboxListRef.current?.contains(hit));
-      dragGhostRef.current?.setHint(overInbox ? t("drag.node.root") : null);
+      ghost?.setHint(overInbox ? t("drag.node.root") : null);
       setPointerDrop(overInbox
         ? { marker: { section: "ungrouped" }, target: { pinned: false } }
         : null);
     };
 
-    const onPointerUp = (event: PointerEvent) => {
-      const drag = pointerDragRef.current;
-      if (!drag || event.pointerId !== drag.pointerId) return;
-      const wasActive = drag.active;
-      const drop = pointerDropRef.current;
-      pointerDragRef.current = null;
-      pointerDropRef.current = null;
-      dragGhostRef.current?.destroy();
-      dragGhostRef.current = null;
-      endDragCursor();
+    const onEnd = (committed: boolean) => {
+      ghost?.destroy();
+      if (ghost) endDragCursor();
       setDraggingConversationId("");
       setDropMarker(null);
-      if (!wasActive) return;
+      if (!committed) return;
       suppressConversationClickRef.current = true;
       if (drop) {
         if (drop.target.createFolder) {
@@ -1046,20 +1012,16 @@ export function AgentWorkspace({ workspaceId, visible = true }: { workspaceId: s
       }
     };
 
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("pointercancel", onPointerUp);
-    return () => {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("pointercancel", onPointerUp);
-      dragGhostRef.current?.destroy();
-      dragGhostRef.current = null;
-      pointerDragRef.current = null;
-      pointerDropRef.current = null;
-      endDragCursor();
-    };
-  }, [moveConversationToNewFolder, organizeConversations, t]);
+    trackDrag(event, {
+      start: () => {
+        setDraggingConversationId(drag.id);
+        ghost = createDragGhost(drag.title);
+        beginDragCursor();
+      },
+      move: onPointerMove,
+      end: onEnd,
+    });
+  };
 
   const renderConversationRow = (
     conversation: AgentConversation,

@@ -147,6 +147,9 @@ html.tauri #root {
 .app.tauri {
   border-radius: 10px;
 }
+.app.tauri.fullscreen {
+  border-radius: 0;
+}
 
 /* WeChat-like top-level navigation: stable click targets around matching icon
    tiles. Selection changes only color and fill, so switching tabs never causes
@@ -3901,6 +3904,8 @@ html.tauri #root {
 
 /* Top horizontal tab strip */
 .htabbar {
+  /* Labels are controls; native text selection competes with tab dragging. */
+  user-select: none;
   display: flex;
   align-items: stretch;
   background: var(--top-bar);
@@ -4024,6 +4029,7 @@ html.tauri #root {
   margin-left: 1px;
 }
 .htab-rename {
+  user-select: text;
   width: 96px;
   height: 18px;
   padding: 0 4px;

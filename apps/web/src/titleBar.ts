@@ -1,6 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useMemo, type MouseEvent } from "react";
 import { isTauri } from "./env";
+import { isReorderedMacTap } from "./macTapCompatibility";
 
 /**
  * Native title-bar behaviour for the app's own chrome: drag the window from the
@@ -125,6 +126,9 @@ export function useTitleBarGesture() {
       if (!action) return;
       // Without this the press leaves a text caret on the bar.
       event.preventDefault();
+      // This tap was already released natively. Starting a native window drag
+      // now would wait for a second release that will never arrive.
+      if (action === "drag" && isReorderedMacTap(event.nativeEvent)) return;
       apply(action);
     },
     onMouseUp: (event: MouseEvent) => {
