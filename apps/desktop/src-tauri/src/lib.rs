@@ -677,18 +677,25 @@ fn create_window(app_handle: &tauri::AppHandle) -> Result<String, String> {
             .inner_size(1280.0, 832.0)
             .min_inner_size(720.0, 480.0)
             .resizable(true)
-            // Matches tauri.conf.json: the frontend draws its own titlebar,
-            // traffic lights and rounded corners (see WindowControls.tsx).
-            .decorations(false)
+            // macOS keeps native traffic lights for Moom / window managers.
+            // Other platforms use the frontend's custom controls.
+            .decorations(cfg!(target_os = "macos"))
             .transparent(true)
             .shadow(true)
-            // Start hidden. The window is transparent and undecorated, so until
+            // Start hidden. The window has a transparent content area, so until
             // the webview has painted there is literally nothing on screen —
             // showing it right away turns the startup wait into "New Window did
             // nothing", and the empty window steals the front spot meanwhile.
             // The frontend reveals it on its first frame (see revealWindow).
             .visible(false)
             .focused(true);
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true)
+            .traffic_light_position(tauri::LogicalPosition::new(6.0, 15.0));
+    }
     // `dragDropEnabled: true` in tauri.conf.json is the builder's default —
     // it only exposes the opt-out (`disable_drag_drop_handler`), so leaving it
     // alone is what matches the declared window.
@@ -1066,6 +1073,22 @@ fn emit_open_paths(app_handle: &tauri::AppHandle, paths: Vec<String>) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
+    #[cfg(target_os = "macos")]
+    let context = {
+        let mut context = context;
+        // Apply after config merging so both release and tauri.dev.conf.json
+        // get native window controls. Borderless windows expose no AXZoomButton
+        // for Moom; HTML traffic lights cannot substitute for AppKit controls.
+        for window in &mut context.config_mut().app.windows {
+            window.decorations = true;
+            window.title_bar_style = tauri::TitleBarStyle::Overlay;
+            window.hidden_title = true;
+            window.traffic_light_position =
+                Some(tauri::utils::config::LogicalPosition { x: 6.0, y: 15.0 });
+        }
+        context
+    };
     let mut builder = tauri::Builder::default();
     // Must be the first plugin registered: a second launch attempt (double
     // Dock click, "reopen windows" after a reboot, etc.) is redirected here
@@ -1281,7 +1304,7 @@ pub fn run() {
         // shells can resume. Windows' confirmed quit path stops the server and
         // exits completely; its tray icon is an open/quit affordance, not a
         // hidden background mode.
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             match event {

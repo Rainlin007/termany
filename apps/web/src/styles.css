@@ -135,14 +135,18 @@ body,
   background-position: center;
 }
 
-/* Desktop shell is a borderless, transparent window so we draw our own rounded
-   corners (no native frame = no top hairline). The window is transparent; .app
-   paints the dark card and clips it to a rounded rect, so the corners fall
-   through to the desktop. macOS adds the drop shadow. */
+/* The desktop content is transparent; .app paints the rounded card. macOS uses
+   a native overlay titlebar and traffic lights; Windows/Linux are borderless.
+   The native window supplies the drop shadow. */
 html.tauri,
 html.tauri body,
 html.tauri #root {
   background: transparent;
+  /* Scroll within panes, never the desktop shell. In WKWebView a trackpad
+     gesture at a pane's boundary can otherwise rubber-band the whole page,
+     especially visibly in native fullscreen. `contain` still allows bounce. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 .app.tauri {
   border-radius: 10px;

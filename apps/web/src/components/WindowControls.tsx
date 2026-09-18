@@ -27,11 +27,12 @@ const glyphs = {
 };
 
 /**
- * macOS-style traffic lights, drawn by us because the window is borderless
- * (decorations: false) to avoid the native frame's top hairline. Rendered only
- * inside the Tauri shell.
+ * Custom traffic lights for borderless Windows/Linux windows. macOS uses
+ * AppKit's real controls so Moom can discover and interact with the zoom button.
+ * Rendered only inside the Tauri shell.
  */
 export function WindowControls({ fullscreen }: { fullscreen: boolean }) {
+  if (IS_MAC) return null;
   const win = getCurrentWindow();
   return (
     <div className="win-controls">
@@ -43,11 +44,10 @@ export function WindowControls({ fullscreen }: { fullscreen: boolean }) {
       </button>
       <button
         className="win-dot zoom"
-        aria-label={fullscreen ? "Exit Full Screen" : IS_MAC ? "Enter Full Screen" : "Zoom"}
-        title={IS_MAC ? `${fullscreen ? "Exit" : "Enter"} Full Screen (⌃⌘F) · Option-click to zoom` : "Zoom"}
-        onClick={(event) => {
-          // macOS green button convention: fullscreen; Option-click zooms.
-          if (fullscreen || (IS_MAC && !event.altKey)) void toggleWindowFullscreen(win);
+        aria-label={fullscreen ? "Exit Full Screen" : "Zoom"}
+        title="Zoom"
+        onClick={() => {
+          if (fullscreen) void toggleWindowFullscreen(win);
           else void win.toggleMaximize();
         }}
       >
