@@ -35,6 +35,7 @@ import { registerWebLinks } from "./webLinks";
 import { fixWebkitGtkImeComposition } from "./webkitGtkIme";
 import { createGlyphAtlasRepairer, onAtlasPagesMerged } from "./glyphAtlas";
 import { TerminalSelectionGuard } from "./selectionGuard";
+import { handleShiftEnter } from "./keyboard";
 
 /**
  * The terminal session registry.
@@ -1386,7 +1387,7 @@ function getSession(id: string, cwdFrom?: string[], sshTarget?: string, paneId =
     for (const action of ACTIONS) {
       if (matchChord(event, keybindings[action.id] ?? action.default)) return false;
     }
-    return true;
+    return handleShiftEnter(event, term);
   });
 
   // Replay the previous run's output tail (server-captured, sanitized) ABOVE
